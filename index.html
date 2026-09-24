@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MaxGym Countdown v6 -->
+<!-- MaxGym Countdown v9 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -101,6 +101,22 @@
   .a2hs b{color:var(--ink);}
   .a2hs svg{vertical-align:-2px; color:var(--ink);}
   .a2hs button{margin-left:auto; flex:0 0 auto; width:32px; height:32px; border:none; border-radius:50%; background:var(--bg); color:var(--ink); font-size:20px; line-height:1; cursor:pointer;}
+  .break-card{--track:linear-gradient(90deg,#F7D774,#C8962E); --track-solid:#A87B1F; --on-track:#2B1D00; --shadow:rgba(200,150,46,.45);
+    --gold:#B8860B; border-color:rgba(200,150,46,.55);
+    background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 90%, #D4A43A 10%), var(--panel));}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .break-card{--gold:#F2C94C;} }
+  :root[data-theme="dark"] .break-card{--gold:#F2C94C;}
+  .break-card .name{color:var(--gold);}
+  .break-card .badge svg{position:relative; z-index:1;}
+  .break-hint{font-size:12px; color:var(--ink-soft); margin-top:-6px;}
+  .break-card .mult{margin-top:8px;}
+  .bk-custom{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-soft);}
+  .bk-custom input{width:64px; border:1px solid var(--line); border-radius:9px; background:var(--bg); color:var(--ink);
+    padding:7px 8px; font-size:16px; font-family:inherit; box-shadow:inset 0 2px 4px rgba(0,0,0,.14);}
+  .bk-custom.active{color:var(--gold); font-weight:700;}
+  .bk-custom.active input{border:2px solid #C8962E; background:color-mix(in srgb, var(--bg) 80%, #F2C94C 20%); font-weight:700;}
+  .row.on-break .pill{background:linear-gradient(90deg,#F7D774,#C8962E);}
+  .phase.break{color:#C8962E; font-weight:700;}
   .top{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:10px;}
   .name{font-size:15px; font-weight:800;}
   .side{flex:0 0 64px; display:flex; flex-direction:column; align-items:center; gap:8px;}
@@ -226,6 +242,23 @@
     <button type="button" id="a2hsClose" aria-label="Close tip">&times;</button>
   </div>
   <div id="rows"></div>
+  <section class="row break-card" id="breakCard" aria-label="Breaks or Broken">
+    <div class="side">
+      <div class="badge"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="4" y="3" width="3.4" height="12" rx="1.2" fill="#2B1D00"/><rect x="10.6" y="3" width="3.4" height="12" rx="1.2" fill="#2B1D00"/></svg></div>
+    </div>
+    <div class="body">
+      <div class="top" style="flex-direction:row;align-items:baseline;justify-content:space-between"><div class="name">Breaks or Broken</div><div class="phase" id="breakState">off</div></div>
+      <div class="break-hint">Check the box if you need time to breathe</div>
+      <div class="mult" id="breakChips">
+        <label data-b="5"><input type="checkbox">5s</label>
+        <label data-b="10"><input type="checkbox">10s</label>
+        <label data-b="20"><input type="checkbox">20s</label>
+        <label data-b="30"><input type="checkbox">30s</label>
+        <label data-b="60"><input type="checkbox">60s</label>
+        <span class="bk-custom" id="breakCustomWrap">other <input type="number" min="1" max="600" step="1" inputmode="numeric" pattern="[0-9]*" id="breakCustom" placeholder="-"> s</span>
+      </div>
+    </div>
+  </section>
 
 </div>
 
@@ -242,14 +275,17 @@
       track:'linear-gradient(90deg,#F87171,#DC2626)', shadow:'rgba(220,38,38,.5)', solid:'#B91C1C', custom:true, ink:'#2A0304',
       mults:[2,5,10,20,30,60] }
   ];
-  timers.forEach(t=>{ t.running=false; t.last=null; });
+  timers.forEach(t=>{ t.running=false; t.last=null; t.onBreak=false; t.breakTotal=0; });
+  const BREAK_CHOICES = [5,10,20,30,60];
+  let breakSecs = 0;
+  try{ breakSecs = Math.max(0, Math.min(600, parseInt(localStorage.getItem('maxgym-break')||'0',10) || 0)); }catch(e){}
 
   const STORE_KEY = 'timerbars-duo-state';
   function saveState(){
     try{
       localStorage.setItem(STORE_KEY, JSON.stringify(timers.map(t=>({
         id:t.id, base:t.base, rounds:t.rounds, round:t.round, phase:t.phase,
-        remaining:t.remaining, running:t.running, last:t.last
+        remaining:t.remaining, running:t.running, last:t.last, onBreak:t.onBreak, breakTotal:t.breakTotal
       }))));
     }catch(e){ /* storage unavailable */ }
   }
@@ -267,6 +303,8 @@
         t.remaining = typeof s.remaining==='number' ? s.remaining : t.base;
         t.running = !!s.running && t.phase==='work' && typeof s.last==='number';
         t.last = t.running ? s.last : null;
+        t.onBreak = !!s.onBreak && t.phase==='work' && s.breakTotal > 0;
+        t.breakTotal = t.onBreak ? s.breakTotal : 0;
         if(t.phase==='idle'){ t.remaining = t.base; t.round = 1; }
       }
     }catch(e){ /* ignore bad data */ }
@@ -322,7 +360,32 @@
     }catch(e){ /* audio not available, ignore */ }
   }
 
+  // Female voice for "Break" / "Go again" (uses the phone's built-in voices)
+  const FEMALE = ['Samantha','Karen','Moira','Tessa','Serena','Victoria','Allison','Ava','Susan','Zoe','Nicky','Kate','Fiona',
+                  'Google US English','Google UK English Female','Microsoft Zira','Microsoft Aria','Microsoft Jenny','Microsoft Hazel'];
+  let voice = null, voiceUnlocked = false;
+  function pickVoice(){
+    if(!('speechSynthesis' in window)) return;
+    const vs = speechSynthesis.getVoices().filter(v=>/^en/i.test(v.lang));
+    voice = vs.find(v=>FEMALE.some(n=>v.name.indexOf(n)===0)) || vs.find(v=>/female/i.test(v.name)) || vs[0] || null;
+  }
+  if('speechSynthesis' in window){ pickVoice(); speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', pickVoice); }
+  function say(text){
+    try{
+      if(!('speechSynthesis' in window)) return;
+      if(!voice) pickVoice();
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      if(voice){ u.voice = voice; u.lang = voice.lang; } else u.lang = 'en-US';
+      u.rate = 0.95; u.pitch = 1.15; u.volume = 1;
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+
   function unlockAudio(){
+    if(!voiceUnlocked && 'speechSynthesis' in window){
+      try{ const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); voiceUnlocked = true; }catch(e){}
+    }
     try{
       if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if(audioCtx.state !== 'running') audioCtx.resume();
@@ -360,7 +423,7 @@
   }
 
   function reset(t){
-    t.round = 1; t.rounds = 1; t.phase = 'idle'; t.remaining = t.base; t.running = false;
+    t.round = 1; t.rounds = 1; t.phase = 'idle'; t.remaining = t.base; t.running = false; t.onBreak = false;
     render();
     syncWakeLock();
     saveState();
@@ -415,19 +478,26 @@
       const dt = (now - t.last)/1000;
       t.last = now;
       t.remaining -= dt;
-      let ended = false, lateBy = 0;
+      let last = null, lateBy = 0;
       while(t.running && t.remaining <= 0){
-        ended = true; lateBy = -t.remaining;
-        if(t.round >= t.rounds){
-          t.round = 1; t.phase = 'idle'; t.remaining = t.base; t.running = false;
-          finished = true;
-        } else {
-          t.round += 1;
-          t.remaining += t.base;
+        lateBy = -t.remaining;
+        if(t.onBreak){                                  // break over -> next repeat
+          t.onBreak = false; t.round += 1; t.remaining += t.base; last = 'go';
+        } else if(t.round >= t.rounds){                 // all repeats done
+          t.round = 1; t.phase = 'idle'; t.remaining = t.base; t.running = false; t.onBreak = false;
+          finished = true; last = 'end';
+        } else if(breakSecs > 0){                       // repeat done -> break
+          t.onBreak = true; t.breakTotal = breakSecs; t.remaining += breakSecs; last = 'break';
+        } else {                                        // repeat done, no break
+          t.round += 1; t.remaining += t.base; last = 'round';
         }
       }
-      if(ended){
-        if(lateBy < 3) dingEnd();   // no surprise ding for something that ended long ago
+      if(last){
+        if(lateBy < 3){   // no surprise sounds for something that ended long ago
+          if(last === 'break'){ dingEnd(); setTimeout(()=>say('Break!'), 950); }
+          else if(last === 'go') say('Go again!');
+          else dingEnd();
+        }
         saveState();
       }
     }
@@ -437,14 +507,15 @@
   }
 
   function pctOf(t){
-    return t.base>0 ? Math.min(100, Math.max(0, 100*(1 - t.remaining/t.base))) : 0;
+    const total = t.onBreak ? t.breakTotal : t.base;
+    return total>0 ? Math.min(100, Math.max(0, 100*(1 - t.remaining/total))) : 0;
   }
 
   function seekPill(t, pillEl, clientX){
     const rect = pillEl.getBoundingClientRect();
     let ratio = rect.width>0 ? (clientX - rect.left) / rect.width : 0;
     ratio = Math.min(1, Math.max(0, ratio));
-    t.remaining = t.base * (1 - ratio);
+    t.remaining = (t.onBreak ? t.breakTotal : t.base) * (1 - ratio);
     if(t.phase === 'idle' || t.phase === 'done') t.phase = 'work';
     updateDom();
   }
@@ -563,13 +634,16 @@
     if(!phaseEl || !startBtn) return;
     let text = '';
     if(t.phase === 'idle') text = t.rounds>1 ? ('rep 1 of '+t.rounds) : '';
+    else if(t.phase === 'work' && t.onBreak){
+      text = (t.running ? 'break' : 'break\npaused') + '\nnext ' + (t.round+1) + '/' + t.rounds;
+    }
     else if(t.phase === 'work'){
       const state = t.running ? 'running' : 'paused';
       text = t.rounds>1 ? (state+'\nrep '+t.round+' of '+t.rounds) : state;
     }
     else text = 'done';
     phaseEl.textContent = text;
-    phaseEl.className = 'phase ' + t.phase;
+    phaseEl.className = 'phase ' + (t.onBreak && t.phase==='work' ? 'break' : t.phase);
     startBtn.textContent = t.phase==='done' ? 'Done' : (t.running ? 'Pause' : (t.phase==='idle' ? 'Start' : 'Resume'));
     startBtn.disabled = t.phase==='done';
     row.querySelectorAll('.mult label').forEach(l=>{
@@ -577,7 +651,7 @@
     });
     if(totalEl){
       totalEl.innerHTML = t.rounds>1
-        ? `Total: <b>${fmt(t.base*t.rounds)}</b>`
+        ? `Total: <b>${fmt(t.base*t.rounds + breakSecs*(t.rounds-1))}</b>` + (breakSecs>0 ? ` <span style="opacity:.75">incl. breaks</span>` : '')
         : `Total: <b>${fmt(t.base)}</b>`;
     }
   }
@@ -587,7 +661,8 @@
       const row = rowsEl.querySelector(`.row[data-id="${t.id}"]`);
       if(!row) return;
       row.classList.toggle('active', t.phase==='work');
-      row.classList.toggle('ending', t.running && t.phase==='work' && t.remaining <= 10);
+      row.classList.toggle('on-break', t.onBreak && t.phase==='work');
+      row.classList.toggle('ending', t.running && t.phase==='work' && !t.onBreak && t.remaining <= 10);
       const clock = row.querySelector('[data-role="clock"]');
       if(clock) clock.textContent = fmt(t.remaining);
       const fill = row.querySelector('[data-role="pillfill"]');
@@ -609,6 +684,39 @@
       try{ localStorage.setItem('maxgym-a2hs-dismissed','1'); }catch(e){}
     });
   })();
+
+  const breakChips = document.getElementById('breakChips');
+  const breakCustom = document.getElementById('breakCustom');
+  const breakCustomWrap = document.getElementById('breakCustomWrap');
+  const breakState = document.getElementById('breakState');
+  function showBreak(){
+    const custom = breakSecs>0 && !BREAK_CHOICES.includes(breakSecs);
+    breakChips.querySelectorAll('label[data-b]').forEach(l=>{
+      const on = +l.dataset.b === breakSecs;
+      l.classList.toggle('active', on); l.querySelector('input').checked = on;
+    });
+    breakCustomWrap.classList.toggle('active', custom);
+    if(document.activeElement !== breakCustom) breakCustom.value = custom ? breakSecs : '';
+    breakState.textContent = breakSecs>0 ? breakSecs + ' s' : 'off';
+  }
+  function setBreak(v){
+    breakSecs = Math.max(0, Math.min(600, v|0));
+    try{ localStorage.setItem('maxgym-break', String(breakSecs)); }catch(e){}
+    showBreak(); updateDom();
+  }
+  // Let the checkbox tick itself, then follow its state (tap on the square or the text both work)
+  breakChips.querySelectorAll('label[data-b] input').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const v = +cb.closest('label').dataset.b;
+      setBreak(cb.checked ? v : 0);
+    });
+  });
+  breakCustom.addEventListener('change', ()=>{
+    const v = Math.floor(+breakCustom.value) || 0;
+    setBreak(v);
+    breakCustom.value = (breakSecs>0 && !BREAK_CHOICES.includes(breakSecs)) ? breakSecs : '';
+  });
+  showBreak();
 
   render();
   if(timers.some(t=>t.running)) ensureTick();
