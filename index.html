@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- MaxGym Countdown v9 -->
+<!-- MaxGym Countdown v10 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -397,13 +397,15 @@
   document.addEventListener('pointerdown', unlockAudio, {passive:true});
 
   // start: one light bell tap
-  function dingStart(){ bell(1976, 1.4, 0.6); }
+  function dingStart(){ bell(1976, 1.4, 0.5); }
   // end: boxing-ring style bell, three quick strikes
   function dingEnd(){
-    bell(1320, 2.6, 0.9, 0);
-    bell(1320, 2.6, 0.9, 0.28);
-    bell(1320, 3.2, 0.9, 0.56);
+    bell(1320, 2.6, 0.7, 0);
+    bell(1320, 2.6, 0.7, 0.28);
+    bell(1320, 3.2, 0.7, 0.56);
   }
+  // before a break: one short, softer strike that fades quickly, leaving room for the voice
+  function dingBreak(){ bell(1320, 1.1, 0.5); }
 
   function fmt(s){
     s = Math.max(0, Math.ceil(s));
@@ -494,7 +496,7 @@
       }
       if(last){
         if(lateBy < 3){   // no surprise sounds for something that ended long ago
-          if(last === 'break'){ dingEnd(); setTimeout(()=>say('Break!'), 950); }
+          if(last === 'break'){ dingBreak(); setTimeout(()=>say('Break!'), 700); }
           else if(last === 'go') say('Go again!');
           else dingEnd();
         }
